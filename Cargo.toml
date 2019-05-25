@@ -1,0 +1,8 @@
+
+[workspace]
+
+members = [
+    "oxi8_cpu",
+    "oxi8_kiss3d",
+    "oxi8_quicksilver",
+]
