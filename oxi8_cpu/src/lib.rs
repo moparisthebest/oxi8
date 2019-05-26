@@ -275,6 +275,23 @@ impl<T: Display, R: Rand> Cpu<T, R> {
         //println!(", after : {:?}", self);
     }
 
+    pub fn reset(&mut self) {
+        self.i = 0;
+        //self.v.iter_mut().for_each(|x| *x = 0);
+        self.v = [0; NUM_REGISTERS];
+        self.delay = 0;
+        self.sound = 0;
+        // *technically* the rom can modify itself in ram, but we are going to ignore that for now
+        self.pc = PROGRAM_OFFSET as u16;
+        self.stack.clear();
+        self.display.clear();
+        self.keyboard.keywait = KeyWait::NONE;
+        // probably don't *need* to reset these timers...
+        self.start_time = Instant::now();
+        self.cpu_timer.last_cycle_timestamp = 0;
+        self.delay_timer.last_cycle_timestamp = 0;
+    }
+
     // executes 1 instruction and returns updated program_counter
     pub fn execute_instruction(&mut self, i: Instruction) -> u16 {
         match i.w() {

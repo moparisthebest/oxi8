@@ -106,7 +106,11 @@ impl State for DrawGeometry {
             if pressed || *button_state == ButtonState::Released {
                 match self.keymap.get(&key) {
                     Some(key) => self.cpu.keyboard.toggle_key(*key, pressed),
-                    None => {}
+                    None => {
+                        if pressed && *key == QKey::Return {
+                            self.cpu.reset();
+                        }
+                    }
                 }
             }
         }
