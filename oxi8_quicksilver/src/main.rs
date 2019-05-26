@@ -1,3 +1,5 @@
+#![recursion_limit = "256"]
+
 // Draw some multi-colored geometry to the screen
 use quicksilver::{
     geom::{Rectangle, Vector},
@@ -13,6 +15,8 @@ use oxi8_cpu::{BoolDisplay, Cpu, Key, Rand, DISPLAY_HEIGHT, DISPLAY_WIDTH};
 
 use rand::prelude::{Rng, ThreadRng};
 
+use std::sync::atomic::{AtomicBool, Ordering};
+
 #[cfg(target_arch = "wasm32")]
 use base64::decode;
 #[cfg(target_arch = "wasm32")]
@@ -23,9 +27,8 @@ use stdweb::{
 
 #[cfg(not(target_arch = "wasm32"))]
 use die::{die, Die};
-use std::io::Read;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+#[cfg(not(target_arch = "wasm32"))]
+use std::thread;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{env, fs};
 
@@ -85,8 +88,8 @@ impl DrawGeometry {
         keymap.insert(QKey::F, Key::KE);
         keymap.insert(QKey::V, Key::KF);
 
-        #[cfg(not(target_arch = "wasm32"))]
-        Beep::start();
+        //#[cfg(not(target_arch = "wasm32"))]
+        //Beep::start();
 
         Ok(DrawGeometry {
             cpu: Cpu::new(rom, BoolDisplay::new(), ThreadRand::new()),
@@ -231,58 +234,106 @@ fn quit() {
 
 static SOUND_ON: AtomicBool = AtomicBool::new(false);
 
-struct Beep {
-    sample_rate: f32,
-    sample_clock: f32,
+#[cfg(target_arch = "wasm32")]
+fn start_audio() {
+    let sound_on = || SOUND_ON.load(Ordering::Relaxed);
+    js! {
+        @(no_return)
+        var ctxClass = window.AudioContext || window.audioContext || window.webkitAudioContext;
+        var ctx = new ctxClass();
+
+        var osc = undefined;
+
+        var sound_on = @{sound_on};
+
+        var on_now = false;
+
+        setInterval(function () {
+            var beep = sound_on();
+            if(beep == on_now)
+                return;
+            on_now = beep;
+            if(beep) {
+                osc = ctx.createOscillator();
+                // Only 0-4 are valid types.
+                //osc.type = (type % 5) || 0;
+                osc.type = "sine";
+                osc.connect(ctx.destination);
+
+                if (osc.noteOn) osc.noteOn(0);
+                if (osc.start) osc.start();
+            } else {
+                if (osc.noteOff) osc.noteOff(0);
+                if (osc.stop) osc.stop();
+            }
+        }, 16); // 1000 / 60 = 16.166667 = 60hz
+    }
 }
 
-impl Beep {
-    fn new() -> Beep {
-        Beep {
-            sample_rate: 3000.0, // tweaking this controls tone
-            sample_clock: 0.0,
-        }
-    }
+#[cfg(not(target_arch = "wasm32"))]
+fn start_audio() {
+    thread::spawn(|| {
+        let device =
+            cpal::default_output_device().expect("Failed to get default audio output device");
+        let format = device
+            .default_output_format()
+            .expect("Failed to get default audio output format");
+        let event_loop = cpal::EventLoop::new();
+        let stream_id = event_loop.build_output_stream(&device, &format).unwrap();
+        event_loop.play_stream(stream_id.clone());
 
-    fn start() {
-        let device = rodio::default_output_device().unwrap();
-        let beep = Beep::new();
-        rodio::play_raw(&device, beep)
-    }
-}
+        let sample_rate = format.sample_rate.0 as f32; // 44_100 on my computer
+        let mut sample_clock = 0f32;
 
-impl Iterator for Beep {
-    type Item = f32;
+        // Produce a sinusoid of maximum amplitude.
+        let mut next_value = || {
+            if SOUND_ON.load(Ordering::Relaxed) {
+                sample_clock = (sample_clock + 1.0) % sample_rate;
+                (sample_clock * 440.0 * 2.0 * 3.141592 / sample_rate).sin()
+            } else {
+                0.0
+            }
+        };
 
-    fn next(&mut self) -> Option<Self::Item> {
-        if SOUND_ON.load(Ordering::Relaxed) {
-            self.sample_clock = (self.sample_clock + 1.0) % self.sample_rate;
-            Some((self.sample_clock * 440.0 * 2.0 * 3.141592 / self.sample_rate).sin())
-        } else {
-            Some(0.0)
-        }
-    }
-}
-
-impl rodio::Source for Beep {
-    fn current_frame_len(&self) -> Option<usize> {
-        None
-    }
-
-    fn channels(&self) -> u16 {
-        1
-    }
-
-    fn sample_rate(&self) -> u32 {
-        self.sample_rate as u32
-    }
-
-    fn total_duration(&self) -> Option<Duration> {
-        None
-    }
+        event_loop.run(move |_, data| match data {
+            cpal::StreamData::Output {
+                buffer: cpal::UnknownTypeOutputBuffer::U16(mut buffer),
+            } => {
+                for sample in buffer.chunks_mut(format.channels as usize) {
+                    let value = ((next_value() * 0.5 + 0.5) * std::u16::MAX as f32) as u16;
+                    for out in sample.iter_mut() {
+                        *out = value;
+                    }
+                }
+            }
+            cpal::StreamData::Output {
+                buffer: cpal::UnknownTypeOutputBuffer::I16(mut buffer),
+            } => {
+                for sample in buffer.chunks_mut(format.channels as usize) {
+                    let value = (next_value() * std::i16::MAX as f32) as i16;
+                    for out in sample.iter_mut() {
+                        *out = value;
+                    }
+                }
+            }
+            cpal::StreamData::Output {
+                buffer: cpal::UnknownTypeOutputBuffer::F32(mut buffer),
+            } => {
+                for sample in buffer.chunks_mut(format.channels as usize) {
+                    let value = next_value();
+                    for out in sample.iter_mut() {
+                        *out = value;
+                    }
+                }
+            }
+            _ => (),
+        });
+    });
 }
 
 fn main() {
+    start_audio();
+
     let settings = Settings {
         show_cursor: false,
         //min_size: Some(Vector { x: DISPLAY_WIDTH as f32 * SCALE_FACTOR, y: DISPLAY_HEIGHT as f32 * SCALE_FACTOR }),
