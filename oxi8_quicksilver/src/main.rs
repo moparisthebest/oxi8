@@ -16,10 +16,13 @@ use rand::prelude::{Rng, ThreadRng};
 #[cfg(target_arch = "wasm32")]
 use base64::decode;
 #[cfg(target_arch = "wasm32")]
-use stdweb::web::window;
+use stdweb::{
+    web::window,
+    {_js_impl, js},
+};
 
 #[cfg(not(target_arch = "wasm32"))]
-use die::Die;
+use die::{die, Die};
 #[cfg(not(target_arch = "wasm32"))]
 use std::{env, fs};
 
@@ -107,8 +110,12 @@ impl State for DrawGeometry {
                 match self.keymap.get(&key) {
                     Some(key) => self.cpu.keyboard.toggle_key(*key, pressed),
                     None => {
-                        if pressed && *key == QKey::Return {
-                            self.cpu.reset();
+                        if pressed {
+                            match *key {
+                                QKey::Return => self.cpu.reset(),
+                                QKey::Back => quit(),
+                                _ => (), // ignore everything else
+                            }
                         }
                     }
                 }
@@ -197,6 +204,22 @@ fn get_rom() -> Vec<u8> {
         Some(file_name) => fs::read(file_name).die("Unable to read first arg as rom"),
         None => PONG.to_vec(),
     }
+}
+
+#[cfg(target_arch = "wasm32")]
+fn quit() {
+    //window().history().back().expect("can't go back?");
+    // doesn't look like you can set location.href with just stdweb rust...
+    //window().location().expect("can't get location?").set("./games.html").expect("can't redirect to games.html");
+    js! {
+    @(no_return)
+    window.location.href = "./games.html";
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn quit() {
+    die!("exiting..."; 0);
 }
 
 fn main() {

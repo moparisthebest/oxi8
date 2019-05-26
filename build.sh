@@ -1,4 +1,6 @@
 #!/usr/bin/env bash
+set -euxo pipefail
+
 cargo web build --release --target wasm32-unknown-unknown -p oxi8_kiss3d
 cargo web build --release --target wasm32-unknown-unknown -p oxi8_quicksilver
 cargo build --release
@@ -17,12 +19,16 @@ cat > oxi8_quicksilver/static/games.html <<EOF
     <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=1" name="viewport" />
 </head>
 <body>
-chip8 had hexadecimal keyboard on right, here is the mapping:<br/>
 <pre>
+chip8 had hexadecimal keyboard like on the right, here is the mapping:
 1234  --->  123C
 QWER  --->  456D
 ASDF  --->  789E
 ZXCV  --->  A0BF
+
+Additional keys specific to oxi8:
+Enter     ---> Reset game
+Backspace ---> Back to game listing
 </pre>
 <a href="https://github.com/moparisthebest/oxi8">oxi8 git repo here</a><br/>
 Click a game to play in your browser:
