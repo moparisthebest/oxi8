@@ -23,6 +23,9 @@ use stdweb::{
 
 #[cfg(not(target_arch = "wasm32"))]
 use die::{die, Die};
+use std::io::Read;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::Duration;
 #[cfg(not(target_arch = "wasm32"))]
 use std::{env, fs};
 
@@ -82,6 +85,9 @@ impl DrawGeometry {
         keymap.insert(QKey::F, Key::KE);
         keymap.insert(QKey::V, Key::KF);
 
+        #[cfg(not(target_arch = "wasm32"))]
+        Beep::start();
+
         Ok(DrawGeometry {
             cpu: Cpu::new(rom, BoolDisplay::new(), ThreadRand::new()),
             keymap,
@@ -100,6 +106,7 @@ impl State for DrawGeometry {
         // if it doesn't, we should call .cycle() instead
         //self.cpu.cycle();
         self.cpu.cycle_60hz();
+        SOUND_ON.store(self.cpu.sound > 0, Ordering::Relaxed);
         Ok(())
     }
 
@@ -220,6 +227,59 @@ fn quit() {
 #[cfg(not(target_arch = "wasm32"))]
 fn quit() {
     die!("exiting..."; 0);
+}
+
+static SOUND_ON: AtomicBool = AtomicBool::new(false);
+
+struct Beep {
+    sample_rate: f32,
+    sample_clock: f32,
+}
+
+impl Beep {
+    fn new() -> Beep {
+        Beep {
+            sample_rate: 3000.0, // tweaking this controls tone
+            sample_clock: 0.0,
+        }
+    }
+
+    fn start() {
+        let device = rodio::default_output_device().unwrap();
+        let beep = Beep::new();
+        rodio::play_raw(&device, beep)
+    }
+}
+
+impl Iterator for Beep {
+    type Item = f32;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        if SOUND_ON.load(Ordering::Relaxed) {
+            self.sample_clock = (self.sample_clock + 1.0) % self.sample_rate;
+            Some((self.sample_clock * 440.0 * 2.0 * 3.141592 / self.sample_rate).sin())
+        } else {
+            Some(0.0)
+        }
+    }
+}
+
+impl rodio::Source for Beep {
+    fn current_frame_len(&self) -> Option<usize> {
+        None
+    }
+
+    fn channels(&self) -> u16 {
+        1
+    }
+
+    fn sample_rate(&self) -> u32 {
+        self.sample_rate as u32
+    }
+
+    fn total_duration(&self) -> Option<Duration> {
+        None
+    }
 }
 
 fn main() {

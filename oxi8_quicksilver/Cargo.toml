@@ -21,6 +21,8 @@ include = [
 [dependencies]
 oxi8_cpu = { version = "0.0.1", path = "../oxi8_cpu" }
 quicksilver = { version = "0.3", default-features = false, features = [] } # we don't need any features now, we will need "sounds" soon
+#cpal = "0.8"
+rodio = { version = "0.8", default-features = false, features = [] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 rand = "0.6"

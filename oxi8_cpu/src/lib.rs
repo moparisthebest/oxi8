@@ -216,7 +216,7 @@ pub struct Cpu<T: Display, R: Rand> {
     i: u16,                 // generally used to store memory addresses so only 12 bits used...
     v: [u8; NUM_REGISTERS], // general purpose
     delay: u8,              // when non-zero decremented at 60hz
-    sound: u8,              // when non-zero decremented at 60hz and sound buzzer
+    pub sound: u8,          // when non-zero decremented at 60hz and sound buzzer
     ram: [u8; RAM_SIZE],
 
     // these are used by the emulator
