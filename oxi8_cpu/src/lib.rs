@@ -11,7 +11,7 @@ use std::time::Instant;
 const RAM_SIZE: usize = 4096; // 0-511 reserved for interpreter, useless today
 const PROGRAM_OFFSET: usize = 512; // can be 1536 for ETI 660 programs
 const NUM_REGISTERS: usize = 16;
-const STACK_SIZE: usize = 16; // actually not used since we use Vec instead...
+const STACK_SIZE: usize = 16; // maximum size of the stack
 
 // these should be config options, standard is 64x32, 128x64 is also common
 // ETI 660 supported 64x48 and 64x64...
@@ -173,6 +173,44 @@ pub trait Rand {
 pub struct ConstantRand {}
 impl Rand for ConstantRand {}
 
+struct Stack {
+    stack: [u16; STACK_SIZE],
+    sp: usize, // stack pointer
+}
+
+impl Stack {
+    fn new() -> Stack {
+        Stack {
+            stack: [0; STACK_SIZE],
+            sp: 0,
+        }
+    }
+
+    fn pop(&mut self) -> Option<u16> {
+        if self.sp == 0 {
+            None
+        } else {
+            self.sp -= 1;
+            Some(self.stack[self.sp])
+        }
+    }
+
+    fn push(&mut self, value: u16) -> Option<()> {
+        if self.sp == STACK_SIZE {
+            return None;
+        }
+        self.stack[self.sp] = value;
+        self.sp += 1;
+        Some(())
+    }
+
+    fn clear(&mut self) {
+        self.sp = 0;
+        // we *could* clear stack here, but don't really *need* to...
+        //self.stack = [0; STACK_SIZE];
+    }
+}
+
 pub struct Cpu<T: Display, R: Rand> {
     // these are accessible by programs
     i: u16,                 // generally used to store memory addresses so only 12 bits used...
@@ -183,7 +221,7 @@ pub struct Cpu<T: Display, R: Rand> {
 
     // these are used by the emulator
     pc: u16, // program counter
-    stack: Vec<u16>,
+    stack: Stack,
     pub display: T,
     pub keyboard: Keyboard,
     start_time: Instant,
@@ -218,7 +256,7 @@ impl<T: Display, R: Rand> Cpu<T, R> {
             sound: 0,
             ram,
             pc: PROGRAM_OFFSET as u16,
-            stack: Vec::with_capacity(STACK_SIZE),
+            stack: Stack::new(),
             display,
             keyboard: Keyboard::new(),
             start_time: Instant::now(),
@@ -310,7 +348,9 @@ impl<T: Display, R: Rand> Cpu<T, R> {
             0x1 => i.xyz(),
             // 2xyz - CALL addr: Call subroutine at xyz
             0x2 => {
-                self.stack.push(self.pc);
+                self.stack
+                    .push(self.pc)
+                    .expect("exceeded maximum stack size");
                 i.xyz()
             }
             // 3xyz - SE Vx, yz: Skip next instruction if Vx = yz
