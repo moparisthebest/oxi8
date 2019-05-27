@@ -129,8 +129,13 @@ impl State for DrawGeometry {
                                 QKey::Return => self.cpu.reset(),
                                 QKey::Back => quit(),
                                 QKey::Space => self.not_paused = !self.not_paused,
+                                QKey::Equals => self.cpu.inc_clock_rate_hz(10),
+                                QKey::Subtract => self.cpu.inc_clock_rate_hz(-10),
+                                QKey::Key0 => self.cpu.set_clock_rate_hz(500), // default chip-8 speed
+                                QKey::Key9 => self.cpu.set_clock_rate_hz(1000), // default schip speed
                                 _ => (), // ignore everything else
                             }
+                            //println!("key: {:?}", *key);
                         }
                     }
                 }

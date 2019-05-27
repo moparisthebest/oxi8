@@ -98,8 +98,6 @@ const CLOCK_RATE_HZ: u32 = 500;
 
 const DELAY_DECREMENT_HZ: u32 = 60; // also used for sound register
 
-const NUM_INSTRUCTIONS_PER_DECREMENT: u32 = CLOCK_RATE_HZ / DELAY_DECREMENT_HZ;
-
 const NANOS_PER_SEC: u32 = 1_000_000_000;
 
 struct Timer {
@@ -108,11 +106,15 @@ struct Timer {
 }
 
 impl Timer {
-    pub fn new(rate_hz: u32) -> Timer {
+    fn new(rate_hz: u32) -> Timer {
         Timer {
             cycle_every_nanos: (NANOS_PER_SEC / rate_hz) as u128,
             last_cycle_timestamp: 0,
         }
+    }
+
+    fn set_rate_hz(&mut self, rate_hz: u32) {
+        self.cycle_every_nanos = (NANOS_PER_SEC / rate_hz) as u128;
     }
 
     fn num_cycles(&mut self, total_elapsed_nanos: u128) -> std::ops::Range<u128> {
@@ -225,8 +227,10 @@ pub struct Cpu<T: Display, R: Rand> {
     pub display: T,
     pub keyboard: Keyboard,
     start_time: Instant,
+    clock_rate_hz: u32,
     cpu_timer: Timer,
     delay_timer: Timer,
+    num_instructions_per_decrement: u32,
     rand: R,
 }
 
@@ -260,9 +264,29 @@ impl<T: Display, R: Rand> Cpu<T, R> {
             display,
             keyboard: Keyboard::new(),
             start_time: Instant::now(),
+            clock_rate_hz: CLOCK_RATE_HZ,
             cpu_timer: Timer::new(CLOCK_RATE_HZ),
             delay_timer: Timer::new(DELAY_DECREMENT_HZ),
+            num_instructions_per_decrement: CLOCK_RATE_HZ / DELAY_DECREMENT_HZ,
             rand,
+        }
+    }
+
+    pub fn get_clock_rate_hz(&self) -> u32 {
+        self.clock_rate_hz
+    }
+
+    pub fn set_clock_rate_hz(&mut self, rate_hz: u32) {
+        self.clock_rate_hz = rate_hz;
+        self.num_instructions_per_decrement = rate_hz / DELAY_DECREMENT_HZ;
+        self.cpu_timer.set_rate_hz(rate_hz);
+    }
+
+    pub fn inc_clock_rate_hz(&mut self, amount: i32) {
+        let new_rate = (self.clock_rate_hz as i32).wrapping_add(amount);
+        // this does cap max at i32 instead of u32 but I don't care...
+        if new_rate >= DELAY_DECREMENT_HZ as i32 {
+            self.set_clock_rate_hz(new_rate as u32);
         }
     }
 
@@ -288,7 +312,7 @@ impl<T: Display, R: Rand> Cpu<T, R> {
     pub fn cycle_60hz(&mut self) {
         self.decrement_timers();
 
-        for _ in 0..NUM_INSTRUCTIONS_PER_DECREMENT {
+        for _ in 0..self.num_instructions_per_decrement {
             self.execute_next_instruction();
         }
     }

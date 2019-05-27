@@ -30,6 +30,10 @@ Additional keys specific to oxi8:
 Enter     ---> Reset game
 Backspace ---> Back to game listing
 Space     ---> Pause game
++/=       ---> Increase CPU Hz by 10
+_/-       ---> Decrease CPU Hz by 10
+0         ---> Set CPU Hz to Chip-8 default of 500hz
+9         ---> Set CPU Hz to SChip default of 1000hz
 </pre>
 <a href="https://github.com/moparisthebest/oxi8">oxi8 git repo here</a><br/>
 Click a game to play in your browser:
