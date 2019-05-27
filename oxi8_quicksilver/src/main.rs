@@ -130,7 +130,9 @@ impl State for DrawGeometry {
                                 QKey::Back => quit(),
                                 QKey::Space => self.not_paused = !self.not_paused,
                                 QKey::Equals => self.cpu.inc_clock_rate_hz(10),
+                                // todo: as a native app the _/- button is 'Subtract' but in WASM it's 'Minus'...
                                 QKey::Subtract => self.cpu.inc_clock_rate_hz(-10),
+                                QKey::Minus => self.cpu.inc_clock_rate_hz(-10),
                                 QKey::Key0 => self.cpu.set_clock_rate_hz(500), // default chip-8 speed
                                 QKey::Key9 => self.cpu.set_clock_rate_hz(1000), // default schip speed
                                 _ => (), // ignore everything else
