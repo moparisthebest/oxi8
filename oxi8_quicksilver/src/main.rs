@@ -57,6 +57,7 @@ struct DrawGeometry {
     cpu: Cpu<BoolDisplay, ThreadRand>,
     keymap: HashMap<QKey, Key>,
     size: (u32, u32),
+    not_paused: bool,
 }
 
 impl DrawGeometry {
@@ -95,6 +96,7 @@ impl DrawGeometry {
             cpu: Cpu::new(rom, BoolDisplay::new(), ThreadRand::new()),
             keymap,
             size: (SCALE_FACTOR, SCALE_FACTOR),
+            not_paused: true,
         })
     }
 }
@@ -107,9 +109,11 @@ impl State for DrawGeometry {
     fn update(&mut self, _window: &mut Window) -> Result<()> {
         // quicksilver is *supposed* to call this at exactly 60hz
         // if it doesn't, we should call .cycle() instead
-        //self.cpu.cycle();
-        self.cpu.cycle_60hz();
-        SOUND_ON.store(self.cpu.sound > 0, Ordering::Relaxed);
+        if self.not_paused {
+            //self.cpu.cycle();
+            self.cpu.cycle_60hz();
+            SOUND_ON.store(self.cpu.sound > 0, Ordering::Relaxed);
+        }
         Ok(())
     }
 
@@ -124,6 +128,7 @@ impl State for DrawGeometry {
                             match *key {
                                 QKey::Return => self.cpu.reset(),
                                 QKey::Back => quit(),
+                                QKey::Space => self.not_paused = !self.not_paused,
                                 _ => (), // ignore everything else
                             }
                         }

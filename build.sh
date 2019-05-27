@@ -29,6 +29,7 @@ ZXCV  --->  A0BF
 Additional keys specific to oxi8:
 Enter     ---> Reset game
 Backspace ---> Back to game listing
+Space     ---> Pause game
 </pre>
 <a href="https://github.com/moparisthebest/oxi8">oxi8 git repo here</a><br/>
 Click a game to play in your browser:
