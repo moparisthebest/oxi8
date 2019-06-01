@@ -813,7 +813,7 @@ pub trait Display {
         let mut pixel_turned_off = false;
         let hires = self.hires();
         let hires_starting_x = starting_x + 8;
-        let mut y = starting_y as usize;
+        let mut y = starting_y as usize % self.height();
         let mut iter = memory.iter();
         // memory *must* be 32 bytes long here, we ensure that at the call site...
         for _ in 1..16 {
