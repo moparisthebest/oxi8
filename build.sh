@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euxo pipefail
 
-cargo web build --release --target wasm32-unknown-unknown -p oxi8_kiss3d
+#cargo web build --release --target wasm32-unknown-unknown -p oxi8_kiss3d
 cargo web build --release --target wasm32-unknown-unknown -p oxi8_quicksilver
 cargo build --release
 
