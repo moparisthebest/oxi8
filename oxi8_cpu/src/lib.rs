@@ -883,15 +883,10 @@ pub struct BoolDisplay {
 
 impl BoolDisplay {
     pub fn new(scale: u32) -> BoolDisplay {
-        let mut buffer = Vec::with_capacity(HEIGHT);
-        // create row we can clone
-        let row: Vec<bool> = (0..WIDTH).map(|_| false).collect();
-        // clone it height times
-        buffer.extend((0..HEIGHT).map(|_| row.clone()));
         BoolDisplay {
             width: WIDTH,
             height: HEIGHT,
-            buffer,
+            buffer: vec![vec![false; WIDTH]; HEIGHT],
             scale,
             hires: false,
         }
@@ -938,24 +933,23 @@ impl Display for BoolDisplay {
             // todo: should we self.clear() here???
             return;
         }
-        self.scale = if on {
+        self.hires = on;
+        if on {
             let new_width = WIDTH * 2;
             self.height = HEIGHT * 2;
             self.width = new_width;
-            self.buffer
-                .extend((HEIGHT..self.height).map(|_| Vec::with_capacity(HEIGHT)));
+            self.buffer.resize(self.height, vec![false; self.width]);
             self.buffer
                 .iter_mut()
-                .for_each(|row| row.extend((row.len()..new_width).map(|_| false)));
-            self.scale / 2
+                .for_each(|row| row.resize(new_width, false));
+            self.scale = self.scale / 2
         } else {
             self.height = HEIGHT;
             self.width = WIDTH;
             self.buffer.truncate(HEIGHT);
             self.buffer.iter_mut().for_each(|row| row.truncate(WIDTH));
-            self.scale * 2
-        };
-        self.hires = on;
+            self.scale = self.scale * 2
+        }
         self.clear();
     }
 
@@ -970,14 +964,14 @@ impl Display for BoolDisplay {
             // delete a number of pixels at the beginning
             row.drain(0..pixels);
             // insert the same number of pixels at the end
-            row.extend((0..pixels).map(|_| false));
+            row.resize(pixels, false);
         });
     }
 
     fn scroll_right(&mut self) {
         let pixels = if self.hires { 4 } else { 2 };
         let truncate_to = self.width - pixels;
-        let prepend: Vec<bool> = (0..pixels).map(|_| false).collect();
+        let prepend: Vec<bool> = vec![false; pixels];
         // for each row
         self.buffer.iter_mut().for_each(|row| {
             // delete a number of pixels at the end
@@ -992,7 +986,7 @@ impl Display for BoolDisplay {
         // delete entire rows of pixels at the bottom
         self.buffer.truncate(self.height - pixels);
         // create row we can clone
-        let row: Vec<bool> = (0..self.width).map(|_| false).collect();
+        let row: Vec<bool> = vec![false; self.width];
         // insert same number of rows of pixels at top
         self.buffer.splice(0..0, (0..pixels).map(|_| row.clone()));
     }
