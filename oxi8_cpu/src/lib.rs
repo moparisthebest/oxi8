@@ -959,12 +959,13 @@ impl Display for BoolDisplay {
 
     fn scroll_left(&mut self) {
         let pixels = if self.hires { 4 } else { 2 };
+        let width = self.width;
         // for each row
         self.buffer.iter_mut().for_each(|row| {
             // delete a number of pixels at the beginning
             row.drain(0..pixels);
             // insert the same number of pixels at the end
-            row.resize(pixels, false);
+            row.resize(width, false);
         });
     }
 
