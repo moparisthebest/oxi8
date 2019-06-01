@@ -830,7 +830,7 @@ pub trait Display {
 
     fn draw(&mut self, starting_x: usize, starting_y: usize, memory: &[u8]) -> bool {
         let mut pixel_turned_off = false;
-        let mut y = starting_y as usize;
+        let mut y = starting_y as usize % self.height();
         for byte in memory.iter() {
             pixel_turned_off |= self.draw_byte(starting_x, y, byte);
             y = (y + 1) % self.height();
