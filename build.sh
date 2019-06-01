@@ -56,6 +56,19 @@ cat >> oxi8_quicksilver/static/games.html <<EOF
 <li><a href="./#$anchor">$name</a></li>
 EOF
 done
+
+echo '<li>OCTO GAMES, some may need to run significantly faster, press 9 then hold +:</li>' >> oxi8_quicksilver/static/games.html
+for game in $(find resources/Octo/examples/ -type f ! -name '*.*')
+do
+# skip xo games for now
+echo "$game" | grep -i 'xo' &>/dev/null && continue || true
+anchor=$(base64 -w0 < "$game")
+name=$(basename "$game")
+cat >> oxi8_quicksilver/static/games.html <<EOF
+<li><a href="./#$anchor">$name</a></li>
+EOF
+done
+
 cat >> oxi8_quicksilver/static/games.html <<EOF
 </ul>
 </body>
