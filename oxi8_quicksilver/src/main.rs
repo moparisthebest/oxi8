@@ -56,7 +56,6 @@ impl Rand for ThreadRand {
 struct DrawGeometry {
     cpu: Cpu<BoolDisplay, ThreadRand>,
     keymap: HashMap<QKey, Key>,
-    size: (u32, u32),
     not_paused: bool,
 }
 
@@ -93,9 +92,8 @@ impl DrawGeometry {
         //Beep::start();
 
         Ok(DrawGeometry {
-            cpu: Cpu::new(rom, BoolDisplay::new(), ThreadRand::new()),
+            cpu: Cpu::new(rom, BoolDisplay::new(SCALE_FACTOR), ThreadRand::new()),
             keymap,
-            size: (SCALE_FACTOR, SCALE_FACTOR),
             not_paused: true,
         })
     }
@@ -154,7 +152,9 @@ impl State for DrawGeometry {
 
         //let mut display = String::new();
         //println!("starting draw");
-        for (y, row) in self.cpu.display.get_buffer().iter().enumerate() {
+        let scale_factor = self.cpu.display.get_scale();
+        let size = (scale_factor, scale_factor);
+        for (y, row) in self.cpu.display.get_buffer().enumerate() {
             for (x, val) in row.iter().enumerate() {
                 if *val {
                     //println!("drawing point ({}, {})", j, i);
@@ -162,7 +162,7 @@ impl State for DrawGeometry {
                     let x = x as u32;
                     let y = y as u32;
                     window.draw(
-                        &Rectangle::new((x * SCALE_FACTOR, y * SCALE_FACTOR), self.size),
+                        &Rectangle::new((x * scale_factor, y * scale_factor), size),
                         Col(Color::WHITE),
                     );
                 //rect.s

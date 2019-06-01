@@ -1,4 +1,5 @@
 use core::fmt;
+use core::slice::Iter;
 
 #[cfg(target_arch = "wasm32")]
 use std::time::Duration;
@@ -11,14 +12,16 @@ use std::time::Instant;
 const RAM_SIZE: usize = 4096; // 0-511 reserved for interpreter, useless today
 const PROGRAM_OFFSET: usize = 512; // can be 1536 for ETI 660 programs
 const NUM_REGISTERS: usize = 16;
-const STACK_SIZE: usize = 16; // maximum size of the stack
+const NUM_FLAG_REGISTERS: usize = 8; // for SCHIP only
+const STACK_SIZE: usize = 16; // maximum size of the stack, 12 for CHIP-8, 16 for SCHIP
 
 // these should be config options, standard is 64x32, 128x64 is also common
 // ETI 660 supported 64x48 and 64x64...
 pub const DISPLAY_WIDTH: u32 = 64;
 pub const DISPLAY_HEIGHT: u32 = 32;
 
-const SPRITE_LEN: usize = 80;
+const SMALL_SPRITE_LEN: usize = 80;
+const SPRITE_LEN: usize = SMALL_SPRITE_LEN + SMALL_SPRITE_LEN * 2; // regular font size + schip font size
 const SPRITES: [u8; SPRITE_LEN] = [
     // http://devernay.free.fr/hacks/chip8/C8TECH10.HTM#font
     0xF0, 0x90, 0x90, 0x90, 0xF0, // 0
@@ -37,6 +40,26 @@ const SPRITES: [u8; SPRITE_LEN] = [
     0xE0, 0x90, 0x90, 0x90, 0xE0, // D
     0xF0, 0x80, 0xF0, 0x80, 0xF0, // E
     0xF0, 0x80, 0xF0, 0x80, 0x80, // F
+    // double size SCHIP sprites, starting at index 80 here
+    0xFF, 0xFF, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF, // 0
+    0x18, 0x78, 0x78, 0x18, 0x18, 0x18, 0x18, 0x18, 0xFF, 0xFF, // 1
+    0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, // 2
+    0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, // 3
+    0xC3, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF, 0x03, 0x03, 0x03, 0x03, // 4
+    0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, // 5
+    0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, // 6
+    0xFF, 0xFF, 0x03, 0x03, 0x06, 0x0C, 0x18, 0x18, 0x18, 0x18, // 7
+    0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, // 8
+    0xFF, 0xFF, 0xC3, 0xC3, 0xFF, 0xFF, 0x03, 0x03, 0xFF, 0xFF, // 9
+    // *technically* SCHIP doesn't include A-F
+    // https://github.com/Chromatophore/HP48-Superchip/blob/master/investigations/quirk_font.md
+    // but it doesn't *hurt* anything in case a game wants to use them...
+    0x7E, 0xFF, 0xC3, 0xC3, 0xC3, 0xFF, 0xFF, 0xC3, 0xC3, 0xC3, // A
+    0xFC, 0xFC, 0xC3, 0xC3, 0xFC, 0xFC, 0xC3, 0xC3, 0xFC, 0xFC, // B
+    0x3C, 0xFF, 0xC3, 0xC0, 0xC0, 0xC0, 0xC0, 0xC3, 0xFF, 0x3C, // C
+    0xFC, 0xFE, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xC3, 0xFE, 0xFC, // D
+    0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, // E
+    0xFF, 0xFF, 0xC0, 0xC0, 0xFF, 0xFF, 0xC0, 0xC0, 0xC0, 0xC0, // F
 ];
 
 const NUM_KEYS: usize = 16;
@@ -217,6 +240,7 @@ pub struct Cpu<T: Display, R: Rand> {
     // these are accessible by programs
     i: u16,                 // generally used to store memory addresses so only 12 bits used...
     v: [u8; NUM_REGISTERS], // general purpose
+    flag: [u8; NUM_FLAG_REGISTERS], // SCHIP 64 one-bit flag registers
     delay: u8,              // when non-zero decremented at 60hz
     pub sound: u8,          // when non-zero decremented at 60hz and sound buzzer
     ram: [u8; RAM_SIZE],
@@ -256,6 +280,7 @@ impl<T: Display, R: Rand> Cpu<T, R> {
         Cpu {
             i: 0,
             v: [0; NUM_REGISTERS],
+            flag: [0; NUM_FLAG_REGISTERS], // todo: provide a way to save/load these?
             delay: 0,
             sound: 0,
             ram,
@@ -332,6 +357,7 @@ impl<T: Display, R: Rand> Cpu<T, R> {
             wx: self.ram.g(self.pc),
             yz: self.ram.g(self.pc + 1),
         };
+        //println!("ins: {}", instruction);
         //print!("ins: {}, before: {:?}", instruction, self);
         self.pc = self.execute_instruction(instruction);
         //println!(", after : {:?}", self);
@@ -346,7 +372,7 @@ impl<T: Display, R: Rand> Cpu<T, R> {
         // *technically* the rom can modify itself in ram, but we are going to ignore that for now
         self.pc = PROGRAM_OFFSET as u16;
         self.stack.clear();
-        self.display.clear();
+        self.display.set_hires(false);
         self.keyboard.keywait = KeyWait::NONE;
         // probably don't *need* to reset these timers...
         self.start_time = Instant::now();
@@ -358,15 +384,47 @@ impl<T: Display, R: Rand> Cpu<T, R> {
     pub fn execute_instruction(&mut self, i: Instruction) -> u16 {
         match i.w() {
             0x0 => match i.xyz() {
+                // 0000 - Octo - FREEZE
+                // https://github.com/JohnEarnest/Octo/blob/gh-pages/docs/SuperChip.md
+                0x000 => panic!("0000 - Octo - FREEZE instruction!"), // todo: take callback function for this
                 // 00E0 - CLS: clear display
                 0x0E0 => {
                     self.display.clear();
                     self.next()
                 }
+                // 00FB - SCHIP - SCROLL_RIGHT: Scroll the display right by 4 pixels in hires, 2 in low
+                0x0FB => {
+                    self.display.scroll_right();
+                    self.next()
+                }
+                // 00FC - SCHIP - SCROLL_LEFT: Scroll the display left by 4 pixels in hires, 2 in low
+                0x0FC => {
+                    self.display.scroll_left();
+                    self.next()
+                }
+                // 00FD - SCHIP - EXIT: Exit the emulator
+                0x0FD => panic!("00FD - SCHIP - EXIT instruction!"), // todo: take callback function for this
+                // 00FE - SCHIP - LORES: Disable high resolution graphics mode and return to 64x32
+                0x0FE => {
+                    self.display.set_hires(false);
+                    self.next()
+                }
+                // 00FF - SCHIP - HIRES: Enable 128x64 high resolution graphics mode
+                0x0FF => {
+                    self.display.set_hires(true);
+                    self.next()
+                }
                 // 00EE - RET: return from subroutine
                 0x0EE => self.stack.pop().expect("returning with no value on stack?") + 2,
                 // 0xyz - SYS addr: Jump to a machine code routine at nnn. Ignored by interpreters
-                _ => self.bad(i),
+                _ => match i.xy() {
+                    // 00Cz - SCHIP - SCROLL_DOWN: Scroll the display down by z pixels in hires, z/2 in low
+                    0x0C => {
+                        self.display.scroll_down(i.z());
+                        self.next()
+                    }
+                    _ => self.bad(i),
+                },
             },
             // 1xyz - JP addr: Jump to location xyz
             0x1 => i.xyz(),
@@ -475,13 +533,21 @@ impl<T: Display, R: Rand> Cpu<T, R> {
                 self.next()
             }
             // Dxyz - DRW Vx, Vy, z: Display z-length-byte sprite starting at memory location I at (Vx, Vy), set VF = collision
+            // Dxy0 - SCHIP - DRW Vx, Vy, 0: Display a special SCHIP 16x16 sprite at memory location I at (Vx, Vy), set VF = collision
             0xD => {
-                let vx = self.v.g(i.x());
-                let vy = self.v.g(i.y());
+                let vx = self.v.g(i.x()) as usize;
+                let vy = self.v.g(i.y()) as usize;
+                let z = i.z() as usize;
                 let from = self.i as usize;
-                let to = from + (i.z() as usize);
-
-                self.v[0xF] = self.display.draw(vx, vy, &self.ram[from..to]) as u8;
+                self.v[0xF] = if z == 0 {
+                    // Draw SCHIP 16x16 sprite
+                    let to = from + 32;
+                    self.display.schip_draw(vx, vy, &self.ram[from..to])
+                } else {
+                    // Draw standard chip8 sprite
+                    let to = from + z;
+                    self.display.draw(vx, vy, &self.ram[from..to])
+                } as u8;
                 self.next()
             }
             0xE => match i.yz() {
@@ -528,6 +594,8 @@ impl<T: Display, R: Rand> Cpu<T, R> {
                     0x1E => self.i += self.v.g(i.x()) as u16,
                     // Fx29 - LD F, Vx: Set I = location of sprite for digit Vx
                     0x29 => self.i = (self.v.g(i.x()) * 5) as u16,
+                    // Fx30 - LD F, Vx: Set I = location of SCHIP sprite for digit Vx
+                    0x30 => self.i = SMALL_SPRITE_LEN as u16 + self.v.g(i.x()) as u16 * 10,
                     // Fx33 - LD B, Vx: Store BCD representation of Vx in memory locations I, I+1, and I+2
                     0x33 => {
                         // takes the decimal value of Vx, and places the hundreds digit in memory at location in I, the tens digit at location I+1, and the ones digit at location I+2.
@@ -548,6 +616,22 @@ impl<T: Display, R: Rand> Cpu<T, R> {
                         let x = i.x() as usize + 1;
                         let i = self.i as usize;
                         self.v[0..x].copy_from_slice(&self.ram[i..(i + x)])
+                    }
+                    // Fx75 - SCHIP - SAVE_FLAGS: Save v0-vX to flag registers
+                    0x75 => {
+                        let x = i.x() as usize + 1;
+                        if x > NUM_FLAG_REGISTERS {
+                            panic!("Fx75 out of bounds x: {}", x - 1);
+                        }
+                        self.flag[0..x].copy_from_slice(&self.v[0..x])
+                    }
+                    // Fx85 - SCHIP - LOAD_FLAGS: Restore v0-vX from flag registers
+                    0x85 => {
+                        let x = i.x() as usize + 1;
+                        if x > NUM_FLAG_REGISTERS {
+                            panic!("Fx85 out of bounds x: {}", x - 1);
+                        }
+                        self.v[0..x].copy_from_slice(&self.flag[0..x])
                     }
                     _ => {
                         self.bad(i);
@@ -688,6 +772,11 @@ impl Instruction {
     }
 
     #[inline(always)]
+    fn xy(&self) -> u8 {
+        self.wx.low() + self.yz.high()
+    }
+
+    #[inline(always)]
     fn xyz(&self) -> u16 {
         // we need to extract the low 12 bits
         (((self.wx as u16) << 8) + (self.yz as u16)) & 0xFFF
@@ -706,68 +795,126 @@ impl fmt::Debug for Instruction {
         let i = self;
         write!(
             f,
-            "Instruction {{ {:X?}{:X?}{:X?}{:X?}, wx: {:02X?}, yz: {:02X?}, xyz: {:03X?} }}",
+            "Instruction {{ {:X?}{:X?}{:X?}{:X?}, wx: {:02X?}, yz: {:02X?}, xy: {:02X?}, xyz: {:03X?} }}",
             i.w(),
             i.x(),
             i.y(),
             i.z(),
             i.wx(),
             i.yz(),
+            i.xy(),
             i.xyz()
         )
     }
 }
 
 pub trait Display {
-    fn draw(&mut self, starting_x: u8, starting_y: u8, memory: &[u8]) -> bool {
+    fn schip_draw(&mut self, starting_x: usize, starting_y: usize, memory: &[u8]) -> bool {
         let mut pixel_turned_off = false;
+        let hires = self.hires();
+        let hires_starting_x = starting_x + 8;
+        let mut y = starting_y as usize;
+        let mut iter = memory.iter();
+        // memory *must* be 32 bytes long here, we ensure that at the call site...
+        for _ in 1..16 {
+            let left = iter.next().unwrap();
+            let right = iter.next().unwrap();
+            pixel_turned_off |= self.draw_byte(starting_x, y, left);
+            if hires {
+                pixel_turned_off |= self.draw_byte(hires_starting_x, y, right);
+            }
+            y = (y + 1) % self.height();
+        }
+        pixel_turned_off
+    }
 
-        for (byte_number, block) in memory.iter().enumerate() {
-            let y = (starting_y as usize + byte_number) % HEIGHT;
+    fn draw(&mut self, starting_x: usize, starting_y: usize, memory: &[u8]) -> bool {
+        let mut pixel_turned_off = false;
+        let mut y = starting_y as usize;
+        for byte in memory.iter() {
+            pixel_turned_off |= self.draw_byte(starting_x, y, byte);
+            y = (y + 1) % self.height();
+        }
+        pixel_turned_off
+    }
 
-            for bit_number in 0..8 {
-                let x = (starting_x as usize + bit_number) % WIDTH;
+    fn draw_byte(&mut self, starting_x: usize, y: usize, byte: &u8) -> bool {
+        let mut pixel_turned_off = false;
+        for bit_number in 0..8 {
+            let x = (starting_x + bit_number) % self.width();
 
-                let current_bit = (block >> (7 - bit_number)) & 1;
+            let current_bit = (byte >> (7 - bit_number)) & 1;
 
-                let current_pixel = self.current_pixel(x, y);
-                let new_pixel = current_bit ^ current_pixel;
+            let current_pixel = self.current_pixel(x, y);
+            let new_pixel = current_bit ^ current_pixel;
 
-                self.set_pixel(x, y, new_pixel);
+            self.set_pixel(x, y, new_pixel);
 
-                if current_pixel == 1 && new_pixel == 0 {
-                    pixel_turned_off = true;
-                }
+            if current_pixel == 1 && new_pixel == 0 {
+                pixel_turned_off = true;
             }
         }
         pixel_turned_off
     }
 
+    fn height(&self) -> usize;
+    fn width(&self) -> usize;
     fn current_pixel(&self, x: usize, y: usize) -> u8;
     fn set_pixel(&mut self, x: usize, y: usize, new_pixel: u8);
     fn clear(&mut self);
+    fn set_hires(&mut self, on: bool);
+    fn hires(&self) -> bool;
+    // for all pixel scrolling, number is halved when in lowres
+    fn scroll_left(&mut self); // scroll left 4 pixels
+    fn scroll_right(&mut self); // scroll right 4 pixels
+    fn scroll_down(&mut self, n: u8); // scroll down 0-15 pixels
 }
 
 const WIDTH: usize = DISPLAY_WIDTH as usize;
 const HEIGHT: usize = DISPLAY_HEIGHT as usize;
 
 pub struct BoolDisplay {
-    buffer: [[bool; WIDTH]; HEIGHT],
+    buffer: Vec<Vec<bool>>,
+    scale: u32,
+    width: usize,
+    height: usize,
+    hires: bool,
 }
 
 impl BoolDisplay {
-    pub fn new() -> BoolDisplay {
+    pub fn new(scale: u32) -> BoolDisplay {
+        let mut buffer = Vec::with_capacity(HEIGHT);
+        // create row we can clone
+        let row: Vec<bool> = (0..WIDTH).map(|_| false).collect();
+        // clone it height times
+        buffer.extend((0..HEIGHT).map(|_| row.clone()));
         BoolDisplay {
-            buffer: [[false; WIDTH]; HEIGHT],
+            width: WIDTH,
+            height: HEIGHT,
+            buffer,
+            scale,
+            hires: false,
         }
     }
 
-    pub fn get_buffer(&self) -> [[bool; WIDTH]; HEIGHT] {
-        self.buffer
+    pub fn get_buffer(&self) -> Iter<Vec<bool>> {
+        self.buffer.iter()
+    }
+
+    pub fn get_scale(&self) -> u32 {
+        self.scale
     }
 }
 
 impl Display for BoolDisplay {
+    fn height(&self) -> usize {
+        self.height
+    }
+
+    fn width(&self) -> usize {
+        self.width
+    }
+
     fn current_pixel(&self, x: usize, y: usize) -> u8 {
         self.buffer[y][x] as u8
     }
@@ -777,6 +924,76 @@ impl Display for BoolDisplay {
     }
 
     fn clear(&mut self) {
-        self.buffer = [[false; WIDTH]; HEIGHT];
+        for row in self.buffer.iter_mut() {
+            for pixel in row.iter_mut() {
+                *pixel = false;
+            }
+        }
+    }
+
+    fn set_hires(&mut self, on: bool) {
+        if self.hires == on {
+            //panic!("attempt to set same resolution again..");
+            // sweetcopter does this...
+            // todo: should we self.clear() here???
+            return;
+        }
+        self.scale = if on {
+            let new_width = WIDTH * 2;
+            self.height = HEIGHT * 2;
+            self.width = new_width;
+            self.buffer
+                .extend((HEIGHT..self.height).map(|_| Vec::with_capacity(HEIGHT)));
+            self.buffer
+                .iter_mut()
+                .for_each(|row| row.extend((row.len()..new_width).map(|_| false)));
+            self.scale / 2
+        } else {
+            self.height = HEIGHT;
+            self.width = WIDTH;
+            self.buffer.truncate(HEIGHT);
+            self.buffer.iter_mut().for_each(|row| row.truncate(WIDTH));
+            self.scale * 2
+        };
+        self.hires = on;
+        self.clear();
+    }
+
+    fn hires(&self) -> bool {
+        self.hires
+    }
+
+    fn scroll_left(&mut self) {
+        let pixels = if self.hires { 4 } else { 2 };
+        // for each row
+        self.buffer.iter_mut().for_each(|row| {
+            // delete a number of pixels at the beginning
+            row.drain(0..pixels);
+            // insert the same number of pixels at the end
+            row.extend((0..pixels).map(|_| false));
+        });
+    }
+
+    fn scroll_right(&mut self) {
+        let pixels = if self.hires { 4 } else { 2 };
+        let truncate_to = self.width - pixels;
+        let prepend: Vec<bool> = (0..pixels).map(|_| false).collect();
+        // for each row
+        self.buffer.iter_mut().for_each(|row| {
+            // delete a number of pixels at the end
+            row.truncate(truncate_to);
+            // insert the same number of pixels at the beginning
+            row.splice(0..0, prepend.iter().cloned());
+        });
+    }
+
+    fn scroll_down(&mut self, pixels: u8) {
+        let pixels = if self.hires { pixels } else { pixels / 2 } as usize;
+        // delete entire rows of pixels at the bottom
+        self.buffer.truncate(self.height - pixels);
+        // create row we can clone
+        let row: Vec<bool> = (0..self.width).map(|_| false).collect();
+        // insert same number of rows of pixels at top
+        self.buffer.splice(0..0, (0..pixels).map(|_| row.clone()));
     }
 }
