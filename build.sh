@@ -47,6 +47,15 @@ cat >> oxi8_quicksilver/static/games.html <<EOF
 <li><a href="./#$anchor">$name</a></li>
 EOF
 done
+echo '<li>SCHIP GAMES:</li>' >> oxi8_quicksilver/static/games.html
+for game in $(find resources/CHIP8/SGAMES/ -type f ! -name '*.*')
+do
+anchor=$(base64 -w0 < "$game")
+name=$(basename "$game")
+cat >> oxi8_quicksilver/static/games.html <<EOF
+<li><a href="./#$anchor">$name</a></li>
+EOF
+done
 cat >> oxi8_quicksilver/static/games.html <<EOF
 </ul>
 </body>
