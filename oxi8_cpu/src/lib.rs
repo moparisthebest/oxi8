@@ -352,11 +352,16 @@ impl<T: Display, R: Rand> Cpu<T, R> {
         }
     }
 
-    pub fn execute_next_instruction(&mut self) {
-        let instruction = Instruction {
+    #[inline(always)]
+    pub fn next_instruction(&self) -> Instruction {
+        Instruction {
             wx: self.ram.g(self.pc),
             yz: self.ram.g(self.pc + 1),
-        };
+        }
+    }
+
+    pub fn execute_next_instruction(&mut self) {
+        let instruction = self.next_instruction();
         //println!("ins: {}", instruction);
         //print!("ins: {}, before: {:?}", instruction, self);
         self.pc = self.execute_instruction(instruction);
@@ -812,6 +817,8 @@ pub trait Display {
     fn schip_draw(&mut self, starting_x: usize, starting_y: usize, memory: &[u8]) -> bool {
         let mut pixel_turned_off = false;
         let hires = self.hires();
+        //println!("hires: {}", hires);
+        //let hires = true;
         let hires_starting_x = starting_x + 8;
         let mut y = starting_y as usize % self.height();
         let mut iter = memory.iter();

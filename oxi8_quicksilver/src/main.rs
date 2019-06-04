@@ -56,7 +56,7 @@ impl Rand for ThreadRand {
 struct DrawGeometry {
     cpu: Cpu<BoolDisplay, ThreadRand>,
     keymap: HashMap<QKey, Key>,
-    not_paused: bool,
+    cycle: fn(&mut DrawGeometry),
 }
 
 impl DrawGeometry {
@@ -94,8 +94,25 @@ impl DrawGeometry {
         Ok(DrawGeometry {
             cpu: Cpu::new(rom, BoolDisplay::new(SCALE_FACTOR), ThreadRand::new()),
             keymap,
-            not_paused: true,
+            cycle: DrawGeometry::cycle,
         })
+    }
+
+    fn noop(&mut self) {
+        // do nothing
+    }
+
+    fn cycle(&mut self) {
+        self.cpu.cycle_60hz();
+        SOUND_ON.store(self.cpu.sound > 0, Ordering::Relaxed);
+    }
+
+    fn toggle_debug(&mut self) {
+        self.cycle = if self.cycle as usize == DrawGeometry::cycle as usize {
+            DrawGeometry::noop
+        } else {
+            DrawGeometry::cycle
+        };
     }
 }
 
@@ -107,11 +124,7 @@ impl State for DrawGeometry {
     fn update(&mut self, _window: &mut Window) -> Result<()> {
         // quicksilver is *supposed* to call this at exactly 60hz
         // if it doesn't, we should call .cycle() instead
-        if self.not_paused {
-            //self.cpu.cycle();
-            self.cpu.cycle_60hz();
-            SOUND_ON.store(self.cpu.sound > 0, Ordering::Relaxed);
-        }
+        (self.cycle)(self);
         Ok(())
     }
 
@@ -126,7 +139,18 @@ impl State for DrawGeometry {
                             match *key {
                                 QKey::Return => self.cpu.reset(),
                                 QKey::Back => quit(),
-                                QKey::Space => self.not_paused = !self.not_paused,
+                                QKey::Space => self.toggle_debug(),
+                                QKey::I => self.toggle_debug(),
+                                QKey::O => {
+                                    if self.cycle as usize == DrawGeometry::noop as usize {
+                                        let instruction = self.cpu.next_instruction();
+                                        //println!("ins: {}", instruction);
+                                        print!("ins: {}, before: {:?}", instruction, self.cpu);
+                                        self.cpu.decrement_timers();
+                                        self.cpu.execute_next_instruction();
+                                        println!(", after : {:?}", self.cpu);
+                                    }
+                                }
                                 QKey::Equals => self.cpu.inc_clock_rate_hz(10),
                                 // todo: as a native app the _/- button is 'Subtract' but in WASM it's 'Minus'...
                                 QKey::Subtract => self.cpu.inc_clock_rate_hz(-10),
