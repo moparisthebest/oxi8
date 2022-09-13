@@ -132,7 +132,7 @@ impl State for DrawGeometry {
         if let Event::Key(key, button_state) = event {
             let pressed = *button_state == ButtonState::Pressed;
             if pressed || *button_state == ButtonState::Released {
-                match self.keymap.get(&key) {
+                match self.keymap.get(key) {
                     Some(key) => self.cpu.keyboard.toggle_key(*key, pressed),
                     None => {
                         if pressed {
@@ -316,7 +316,7 @@ fn start_audio() {
             .expect("Failed to get default audio output format");
         let event_loop = cpal::EventLoop::new();
         let stream_id = event_loop.build_output_stream(&device, &format).unwrap();
-        event_loop.play_stream(stream_id.clone());
+        event_loop.play_stream(stream_id);
 
         let sample_rate = format.sample_rate.0 as f32; // 44_100 on my computer
         let mut sample_clock = 0f32;
@@ -325,7 +325,7 @@ fn start_audio() {
         let mut next_value = || {
             if SOUND_ON.load(Ordering::Relaxed) {
                 sample_clock = (sample_clock + 1.0) % sample_rate;
-                (sample_clock * 440.0 * 2.0 * 3.141592 / sample_rate).sin()
+                (sample_clock * 440.0 * 2.0 * std::f32::consts::PI / sample_rate).sin()
             } else {
                 0.0
             }

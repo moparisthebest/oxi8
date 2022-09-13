@@ -1,5 +1,4 @@
-use core::fmt;
-use core::slice::Iter;
+use core::{fmt, slice::Iter};
 
 #[cfg(target_arch = "wasm32")]
 use std::time::Duration;
@@ -91,27 +90,29 @@ pub struct Keyboard {
 
 #[derive(PartialEq)]
 enum KeyWait {
-    NONE,        // nothing to wait for
-    WAIT,        // wait for a keypress
-    PRESSED(u8), // a key was pressed
+    None,        // nothing to wait for
+    Wait,        // wait for a keypress
+    Pressed(u8), // a key was pressed
 }
 
 impl Keyboard {
-    pub fn new() -> Keyboard {
-        Keyboard {
-            keys: [false; NUM_KEYS],
-            keywait: KeyWait::NONE,
-        }
-    }
-
     fn key_pressed(&self, keycode: u8) -> bool {
         self.keys[keycode as usize]
     }
 
     pub fn toggle_key(&mut self, key: Key, pressed: bool) {
         self.keys[key as usize] = pressed;
-        if pressed && self.keywait == KeyWait::WAIT {
-            self.keywait = KeyWait::PRESSED(key as u8);
+        if pressed && self.keywait == KeyWait::Wait {
+            self.keywait = KeyWait::Pressed(key as u8);
+        }
+    }
+}
+
+impl Default for Keyboard {
+    fn default() -> Self {
+        Keyboard {
+            keys: [false; NUM_KEYS],
+            keywait: KeyWait::None,
         }
     }
 }
@@ -272,7 +273,7 @@ impl<T: Display, R: Rand> Cpu<T, R> {
         // sprites go up front
         ram[0..SPRITE_LEN].copy_from_slice(&SPRITES);
         // rom goes to PROGRAM_OFFSET
-        ram[PROGRAM_OFFSET..(PROGRAM_OFFSET + rom.len())].copy_from_slice(&rom);
+        ram[PROGRAM_OFFSET..(PROGRAM_OFFSET + rom.len())].copy_from_slice(rom);
 
         // for handy inspection with xxd
         //fs::write("/tmp/ram.debug", &ram[0..RAM_SIZE]).expect("Unable to write file");
@@ -287,7 +288,7 @@ impl<T: Display, R: Rand> Cpu<T, R> {
             pc: PROGRAM_OFFSET as u16,
             stack: Stack::new(),
             display,
-            keyboard: Keyboard::new(),
+            keyboard: Keyboard::default(),
             start_time: Instant::now(),
             clock_rate_hz: CLOCK_RATE_HZ,
             cpu_timer: Timer::new(CLOCK_RATE_HZ),
@@ -378,7 +379,7 @@ impl<T: Display, R: Rand> Cpu<T, R> {
         self.pc = PROGRAM_OFFSET as u16;
         self.stack.clear();
         self.display.set_hires(false);
-        self.keyboard.keywait = KeyWait::NONE;
+        self.keyboard.keywait = KeyWait::None;
         // probably don't *need* to reset these timers...
         self.start_time = Instant::now();
         self.cpu_timer.last_cycle_timestamp = 0;
@@ -574,19 +575,19 @@ impl<T: Display, R: Rand> Cpu<T, R> {
                         // and we will check again, that in practice continues to return to this code
                         // over and over polling if a key is down yet
                         let found = match &self.keyboard.keywait {
-                            KeyWait::NONE => {
-                                self.keyboard.keywait = KeyWait::WAIT;
+                            KeyWait::None => {
+                                self.keyboard.keywait = KeyWait::Wait;
                                 false
                             }
-                            KeyWait::WAIT => false,
-                            KeyWait::PRESSED(key_value) => {
+                            KeyWait::Wait => false,
+                            KeyWait::Pressed(key_value) => {
                                 // finally! a key pressed
                                 self.v.s(i.x(), *key_value);
                                 true
                             }
                         };
                         if found {
-                            self.keyboard.keywait = KeyWait::NONE;
+                            self.keyboard.keywait = KeyWait::None;
                         } else {
                             self.pc -= 2;
                         }
@@ -640,7 +641,6 @@ impl<T: Display, R: Rand> Cpu<T, R> {
                     }
                     _ => {
                         self.bad(i);
-                        ()
                     }
                 }
                 self.next()
@@ -729,7 +729,7 @@ trait Nibble {
 impl Nibble for u8 {
     #[inline(always)]
     fn high(&self) -> u8 {
-        ((self >> 4) & 0xF as u8)
+        (self >> 4) & 0xF_u8
     }
 
     #[inline(always)]
@@ -949,13 +949,13 @@ impl Display for BoolDisplay {
             self.buffer
                 .iter_mut()
                 .for_each(|row| row.resize(new_width, false));
-            self.scale = self.scale / 2
+            self.scale /= 2
         } else {
             self.height = HEIGHT;
             self.width = WIDTH;
             self.buffer.truncate(HEIGHT);
             self.buffer.iter_mut().for_each(|row| row.truncate(WIDTH));
-            self.scale = self.scale * 2
+            self.scale *= 2
         }
         self.clear();
     }
